@@ -62,12 +62,19 @@ total_from_files() {
 }
 
 cmd_on() {
-    [[ -f "$STATE" ]] && return 0
+    if [[ -f "$STATE" ]]; then
+        echo "already running" >&2
+        exit 1
+    fi
+
     date +%s > "$STATE"
 }
 
 cmd_off() {
-    [[ -f "$STATE" ]] || return 0
+    if [[ ! -f "$STATE" ]]; then
+        echo "not running" >&2
+        exit 1
+    fi
 
     local start end
     start=$(cat "$STATE")
@@ -79,25 +86,57 @@ cmd_off() {
 }
 
 cmd_status() {
+    local total=0
+
     if [[ -f "$STATE" ]]; then
         local start now
         start=$(cat "$STATE")
         now=$(now)
 
-        split_range "$start" "$now"
+        # compute temporary contribution without modifying state
+        while (( start < now )); do
+            local mid next
+            mid=$(next_midnight "$start")
+
+            if (( now < mid )); then
+                next=$now
+            else
+                next=$mid
+            fi
+
+            total=$((total + next - start))
+            start=$next
+        done
     fi
 
-    total_from_files
+    total=$((total + $(total_from_files)))
+
+    printf "%s seconds\n" "$total"
 }
 
-# cmd="${1:-status}"
+cmd_log() {
+    local n=7
+    [[ $# -ge 2 ]] && n="$2"
 
-case "${1:-status}" in
-    on|off|status)
-        "cmd_${1:-status}"
-        ;;
+    shopt -s nullglob
+
+    ls -1t "$DIR"/*.json 2>/dev/null | head -n "$n" | while read -r f; do
+        local d s
+        d=$(jq -r '.date' "$f")
+        s=$(jq -r '.seconds' "$f")
+        printf "%s %s seconds\n" "$d" "$s"
+    done
+}
+
+cmd="${1:-*}"
+
+case "$cmd" in
+    on)     cmd_on ;;
+    off)    cmd_off ;;
+    status) cmd_status ;;
+    log)    cmd_log "$@" ;;
     *)
-        echo "usage: worktrack {on|off|status}" >&2
+        echo "usage: work-track {on|off|status|log}" >&2
         exit 1
         ;;
 esac
