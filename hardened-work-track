@@ -10,6 +10,12 @@ now() { date +%s; }
 day_of() { date -d "@$1" +%F; }
 next_midnight() { date -d "$(date -d "@$1" +%F) +1 day" +%s; }
 
+fmt_dur() {
+    local t=$1 h m s
+    h=$((t / 3600)); m=$(( (t % 3600) / 60 )); s=$((t % 60))
+    printf "%dh %02dm %02ds" "$h" "$m" "$s"
+}
+
 save_day() {
     local d="$1"
     local add="$2"
@@ -58,7 +64,7 @@ total_from_files() {
         total=$((total + $(jq -r '.seconds // 0' "$f")))
     done
 
-    echo "$total"
+    printf "%s\n" "$(fmt_dur $total)"
 }
 
 cmd_on() {
@@ -124,7 +130,7 @@ cmd_log() {
         local d s
         d=$(jq -r '.date' "$f")
         s=$(jq -r '.seconds' "$f")
-        printf "%s %s seconds\n" "$d" "$s"
+        printf "%s  %s\n" "$d" "$(fmt_dur $s)"
     done
 }
 
