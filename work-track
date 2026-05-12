@@ -67,24 +67,20 @@ split_range() {
     [[ "$mode" == sum ]] && echo "$total"
 }
 
-total_from_files() {
-    local total=0
-    shopt -s nullglob
-
-    for f in "$DIR"/*.json; do
-        total=$((total + $(jq -r '.seconds // 0' "$f")))
-    done
-
-    printf "%s\n" "$(fmt_dur $total)"
-}
-
 cmd_on() {
-    [[ -f "$STATE" ]] && return 0
+    if [[ -f "$STATE" ]]; then
+        echo "already running" >&2
+        exit 1
+    fi
+
     date +%s > "$STATE"
 }
 
 cmd_off() {
-    [[ -f "$STATE" ]] || return 0
+    if [[ ! -f "$STATE" ]]; then
+        echo "not running" >&2
+        exit 1
+    fi
 
     local start end
     start=$(cat "$STATE")
@@ -96,7 +92,7 @@ cmd_off() {
 }
 
 cmd_status() {
-    [[ -f "$STATE" ]] || return 0
+    [[ -f "$STATE" ]] || exit
 
     local start end
     start=$(cat "$STATE")
@@ -106,7 +102,7 @@ cmd_status() {
 }
 
 cmd_save() {
-    [[ -f "$STATE" ]] || return 0
+    [[ -f "$STATE" ]] || exit
 
     local start end
     start=$(cat "$STATE")
