@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="${XDG_DATA_HOME:-$HOME/.local/share}/worktrack"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/worktrack_on"
+
+mkdir -p "$DIR"
+
+now() { date +%s; }
+day_of() { date -d "@$1" +%F; }
+next_midnight() { date -d "$(date -d "@$1" +%F) +1 day" +%s; }
+
+save_day() {
+    local d="$1"
+    local add="$2"
+    local file="$DIR/$d.json"
+
+    local old=0
+    [[ -f "$file" ]] && old=$(jq -r '.seconds // 0' "$file")
+
+    local total=$((old + add))
+
+    jq -n \
+        --arg date "$d" \
+        --argjson seconds "$total" \
+        '{
+            date: $date,
+            seconds: $seconds
+        }' > "$file"
+}
+
+split_range() {
+    local start="$1"
+    local end="$2"
+
+    while (( start < end )); do
+        local d mid next
+
+        d=$(day_of "$start")
+        mid=$(next_midnight "$start")
+
+        if (( end < mid )); then
+            next=$end
+        else
+            next=$mid
+        fi
+
+        save_day "$d" $((next - start))
+        start=$next
+    done
+}
+
+total_from_files() {
+    local total=0
+    shopt -s nullglob
+
+    for f in "$DIR"/*.json; do
+        total=$((total + $(jq -r '.seconds // 0' "$f")))
+    done
+
+    echo "$total"
+}
+
+cmd_on() {
+    [[ -f "$STATE" ]] && return 0
+    date +%s > "$STATE"
+}
+
+cmd_off() {
+    [[ -f "$STATE" ]] || return 0
+
+    local start end
+    start=$(cat "$STATE")
+    end=$(now)
+
+    rm -f "$STATE"
+
+    split_range "$start" "$end"
+}
+
+cmd_status() {
+    if [[ -f "$STATE" ]]; then
+        local start now
+        start=$(cat "$STATE")
+        now=$(now)
+
+        split_range "$start" "$now"
+    fi
+
+    total_from_files
+}
+
+# cmd="${1:-status}"
+
+case "${1:-status}" in
+    on|off|status)
+        "cmd_${1:-status}"
+        ;;
+    *)
+        echo "usage: worktrack {on|off|status}" >&2
+        exit 1
+        ;;
+esac
