@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# work-track — daily screen-on time tracker for Wayland
+#
+# USAGE
+#   work-track on      screen on  (swayidle resume / after-resume)
+#   work-track off     screen off (swayidle timeout / before-sleep)
+#   work-track status  print today's total
+#   work-track save    bank current session, persist to JSON
+#   work-track log     show last 7 days
+#
+# STATE
+#   Runtime : $XDG_RUNTIME_DIR/worktrack/   (tmpfs on modern linux /run/user/1000/)
+#   Persist : $XDG_DATA_HOME/worktrack/YYYY-MM-DD.json
+
+RDIR="${XDG_RUNTIME_DIR:-/tmp}/worktrack"
+DDIR="${XDG_DATA_HOME:-$HOME/.local/share}/worktrack"
+F_ON="$RDIR/on_since"
+F_TOT="$RDIR/daily_total"
+F_DAT="$RDIR/daily_date"
+
+mkdir -p "$RDIR" "$DDIR"
+
+# helpers
+
+epoch()   { date +%s; }
+today_s() { date +%F; }
+midnight(){ date -d 00:00 +%s; }
+
+fmt_dur() {
+    local t=$1 h m s
+    h=$((t / 3600)); m=$(( (t % 3600) / 60 )); s=$((t % 60))
+    printf "%dh %02dm %02ds" "$h" "$m" "$s"
+}
+
+save_json() {
+    local d=$1 secs=$2 f="$DDIR/$d.json"
+    local hf; hf=$(awk "BEGIN{printf \"%.2f\",$secs/3600}")
+    cat >"$f" <<END
+{
+  "date": "$d",
+  "total_seconds": $secs,
+  "total_hours": $hf,
+  "human": "$(fmt_dur $secs)"
+}
+END
+}
+
+# handle midnight crossover while screen is on
+
+rollover() {
+    [ -f "$F_ON" ] || return 0
+    local stored; stored=$(cat "$F_DAT" 2>/dev/null || true)
+    local cur; cur=$(today_s)
+    [ "$stored" = "$cur" ] && return 0
+
+    local on mid prev old
+    on=$(cat "$F_ON"); mid=$(midnight)
+    prev=0
+    [ "$on" -lt "$mid" ] && prev=$((mid - on))
+
+    old=$(cat "$F_TOT" 2>/dev/null || echo 0)
+    save_json "$stored" $((old + prev))
+
+    echo "0"       > "$F_TOT"
+    echo "$cur"    > "$F_DAT"
+    echo "$mid"    > "$F_ON"
+}
+
+# bank elapsed time into F_TOT, remove F_ON
+
+bank() {
+    [ -f "$F_ON" ] || return 0
+    rollover
+    local on now_e tot el new d
+    on=$(cat "$F_ON"); now_e=$(epoch)
+    tot=$(cat "$F_TOT" 2>/dev/null || echo 0)
+    d=$(cat "$F_DAT" 2>/dev/null || today_s)
+    el=$((now_e - on)); [ "$el" -lt 0 ] && el=0
+    new=$((tot + el))
+    echo "$new" > "$F_TOT"
+    rm -f "$F_ON"
+    save_json "$d" "$new"
+}
+
+# live total (includes current session if screen is on)
+
+live_total() {
+    rollover
+    local tot; tot=$(cat "$F_TOT" 2>/dev/null || echo 0)
+    if [ -f "$F_ON" ]; then
+        local on now_e el
+        on=$(cat "$F_ON"); now_e=$(epoch)
+        el=$((now_e - on)); [ "$el" -gt 0 ] && tot=$((tot + el))
+    fi
+    echo "$tot"
+}
+
+# commands
+
+cmd_on() {
+    [ -f "$F_ON" ] && return 0
+    rollover
+    echo "$(epoch)"   > "$F_ON"
+    [ -f "$F_DAT" ] || echo "$(today_s)" > "$F_DAT"
+    [ -f "$F_TOT" ] || echo "0" > "$F_TOT"
+}
+
+cmd_off() { bank; }
+
+cmd_status() {
+    local d tot
+    d=$(cat "$F_DAT" 2>/dev/null || today_s)
+    tot=$(live_total)
+    printf "%s  %s\n" "$d" "$(fmt_dur $tot)"
+}
+
+cmd_save() {
+    if [ -f "$F_ON" ]; then
+        bank
+        echo "$(epoch)" > "$F_ON"
+    fi
+    local d tot
+    d=$(cat "$F_DAT" 2>/dev/null || today_s)
+    tot=$(cat "$F_TOT" 2>/dev/null || echo 0)
+    save_json "$d" "$tot"
+    echo "saved $d → $(fmt_dur $tot)"
+}
+
+cmd_log() {
+    local n="${2:-7}"
+    printf "last %d days\n" "$n"
+    ls -1t "$DDIR"/*.json 2>/dev/null | head -"$n" | while IFS= read -r f; do
+        local d h
+        d=$(grep '"date"'  "$f" | head -1 | cut -d'"' -f4)
+        h=$(grep '"human"' "$f" | head -1 | cut -d'"' -f4)
+        printf "  %-12s %s\n" "$d" "$h"
+    done
+}
+
+# dispatch
+
+case "${1:-status}" in
+    on|off|status|save|log) "cmd_${1:-status}" "$@" ;;
+    *)
+        echo "Usage: work-track {on|off|status|save|log}" >&2
+        exit 1 ;;
+esac
