@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="${XDG_DATA_HOME:-$HOME/.local/share}/worktrack"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/worktrack_on"
+mkdir -p "$DIR"
+
+now(){ date +%s; }
+day(){ date -d "@$1" +%F; }
+mid(){ date -d "$(date -d "@$1" +%F) +1 day" +%s; }
+
+save(){
+  f="$DIR/$1.json" tmp="$f.tmp" old=0
+  [[ -f "$f" ]] && old=$(jq -r '.seconds//0' "$f")
+  jq -n --arg date "$1" --argjson seconds $((old+$2)) '{date:$date,seconds:$seconds}' > "$tmp"
+  mv -f "$tmp" "$f"
+}
+
+split(){
+  a=$1 b=$2
+  while ((a<b)); do
+    d=$(day "$a"); m=$(mid "$a")
+    ((b<m)) && m=$b
+    save "$d" $((m-a))
+    a=$m
+  done
+}
+
+case "${1:-}" in
+on)
+  [[ -f "$STATE" ]] && exit 1
+  now > "$STATE"
+  ;;
+
+off)
+  [[ -f "$STATE" ]] || exit 1
+  s=$(<"$STATE")
+  rm -f "$STATE"
+  split "$s" "$(now)"
+  ;;
+
+stats)
+  n="${2:-1}"
+  now_ts=$(now) today=$(day "$now_ts")
+  for ((i=0; i<n; i++)); do
+    d=$(date -d "$i days ago" +%F)
+    f="$DIR/$d.json"
+    t=0
+    # state_now=$(<"$STATE")
+    [[ -f "$f" ]] && t=$(jq -r '.seconds//0' "$f")
+    [[ "$d" == "$today" && -f "$STATE" ]] && t=$((t + now_ts - $(cat "$STATE")))
+    # [[ "$d" == "$today" && -f "$STATE" ]] && t=$((t + now_ts - state_now))
+    printf "%s  %dh %02dm %02ds\n" "$d" $((t/3600)) $((t%3600/60)) $((t%60))
+  done
+  ;;
+
+*)
+  echo "work-track {on|off|stats}"
+  ;;
+esac

@@ -54,7 +54,7 @@ Runtime state lives in `$XDG_RUNTIME_DIR` (tmpfs/RAM) instead of writing straigh
 ```json
 {
   "custom/worktrack": {
-    "exec": "work-track stats",
+    "exec": "work-track status",
     "interval": 60,
     "format": "⏱ {}"
   }

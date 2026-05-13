@@ -92,7 +92,7 @@ cmd_off() {
 }
 
 cmd_status() {
-    [[ -f "$STATE" ]] || exit
+    [[ -f "$STATE" ]] || exit 1
 
     local start end
     start=$(cat "$STATE")
@@ -102,7 +102,7 @@ cmd_status() {
 }
 
 cmd_save() {
-    [[ -f "$STATE" ]] || exit
+    [[ -f "$STATE" ]] || exit 1
 
     local start end
     start=$(cat "$STATE")
