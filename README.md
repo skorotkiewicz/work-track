@@ -27,11 +27,11 @@ mini-track stats N  # last N days (default: 1)
 Add to your compositor startup config (e.g., Niri):
 
 ```bash
-spawn-sh-at-startup "swayidle -w \
-    timeout 300 'swaylock -f -i /usr/share/backgrounds/archlinux/snow.jpg' \
-    timeout 600 'work-track off; niri msg action power-off-monitors' \
-        resume 'work-track on' \
-    before-sleep 'work-track off; swaylock -f -i /usr/share/backgrounds/archlinux/snow.jpg' \
+spawn-sh-at-startup "swayidle -w \\
+    timeout 300 'swaylock -f -i /usr/share/backgrounds/archlinux/snow.jpg' \\
+    timeout 600 'work-track off; niri msg action power-off-monitors' \\
+        resume 'work-track on' \\
+    before-sleep 'work-track off; swaylock -f -i /usr/share/backgrounds/archlinux/snow.jpg' \\
     after-resume 'work-track on' &"
 ```
 
