@@ -27,6 +27,8 @@ mini-track stats N  # last N days (default: 1)
 Add to your compositor startup config (e.g., Niri):
 
 ```rust
+// sudo ln -s /home/worktracker/mini-track /usr/bin/mini-track
+spawn-sh-at-startup "mini-track on"
 spawn-sh-at-startup "swayidle -w \\
     timeout 300 'swaylock -f' \\
     timeout 600 'work-track off; niri msg action power-off-monitors' \\
