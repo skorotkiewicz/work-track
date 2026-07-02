@@ -32,7 +32,8 @@ save_day() {
         '{
             date: $date,
             seconds: $seconds
-        }' > "$file"
+        }' > "$file.tmp"
+    mv -f "$file.tmp" "$file"   # atomic: no half-written day on crash
 }
 
 split_range() {
@@ -64,7 +65,8 @@ split_range() {
         start=$next
     done
 
-    [[ "$mode" == sum ]] && echo "$total"
+    # plain if: '[[ ]] &&' returns 1 in save mode and set -e kills the script
+    if [[ "$mode" == sum ]]; then echo "$total"; fi
 }
 
 cmd_on() {
@@ -76,6 +78,17 @@ cmd_on() {
     date +%s > "$STATE"
 }
 
+read_state() {
+    local s
+    s=$(<"$STATE")
+    if [[ ! "$s" =~ ^[0-9]+$ ]]; then
+        echo "corrupt state file, discarding" >&2
+        rm -f "$STATE"
+        exit 1
+    fi
+    echo "$s"
+}
+
 cmd_off() {
     if [[ ! -f "$STATE" ]]; then
         echo "not running" >&2
@@ -83,32 +96,39 @@ cmd_off() {
     fi
 
     local start end
-    start=$(cat "$STATE")
+    start=$(read_state)
     end=$(now)
 
-    rm -f "$STATE"
-
-    split_range "$start" "$end"
+    split_range "$start" "$end"   # save first,
+    rm -f "$STATE"                # drop state only on success
 }
 
 cmd_status() {
-    [[ -f "$STATE" ]] || exit 1
+    if [[ ! -f "$STATE" ]]; then
+        echo "not running" >&2
+        exit 1
+    fi
 
     local start end
-    start=$(cat "$STATE")
+    start=$(read_state)
     end=$(now)
 
     fmt_dur "$(split_range "$start" "$end" sum)"
+    echo
 }
 
 cmd_save() {
-    [[ -f "$STATE" ]] || exit 1
+    if [[ ! -f "$STATE" ]]; then
+        echo "not running" >&2
+        exit 1
+    fi
 
     local start end
-    start=$(cat "$STATE")
+    start=$(read_state)
     end=$(now)
 
     split_range "$start" "$end" save
+    echo "$end" > "$STATE"   # reset start, else next off/save double-counts
 
     echo "saved"
 }
@@ -118,16 +138,19 @@ cmd_log() {
     [[ $# -ge 2 ]] && n="$2"
 
     shopt -s nullglob
+    local files=("$DIR"/*.json)
+    ((${#files[@]})) || return 0
 
-    ls -1t "$DIR"/*.json 2>/dev/null | head -n "$n" | while read -r f; do
+    # names are YYYY-MM-DD.json, so reverse lexical sort = newest first
+    printf '%s\n' "${files[@]}" | sort -r | head -n "$n" | while read -r f; do
         local d s
-        d=$(jq -r '.date' "$f")
-        s=$(jq -r '.seconds' "$f")
-        printf "%s  %s\n" "$d" "$(fmt_dur $s)"
+        d=$(jq -r '.date // empty' "$f")
+        s=$(jq -r '.seconds // 0' "$f")
+        printf "%s  %s\n" "$d" "$(fmt_dur "$s")"
     done
 }
 
-case "${1:-}" in
+case "${1:-status}" in
     on|off|status|save|log) "cmd_${1:-status}" "$@" ;;
     *)
         echo "Usage: work-track {on|off|status|save|log}" >&2

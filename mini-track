@@ -35,8 +35,9 @@ on)
 off)
   [[ -f "$STATE" ]] || exit 1
   s=$(<"$STATE")
+  [[ "$s" =~ ^[0-9]+$ ]] || { echo "corrupt state, discarding" >&2; rm -f "$STATE"; exit 1; }
+  split "$s" "$(now)"   # save first, drop state only on success
   rm -f "$STATE"
-  split "$s" "$(now)"
   ;;
 
 stats)
@@ -46,15 +47,14 @@ stats)
     d=$(date -d "$i days ago" +%F)
     f="$DIR/$d.json"
     t=0
-    # state_now=$(<"$STATE")
     [[ -f "$f" ]] && t=$(jq -r '.seconds//0' "$f")
-    [[ "$d" == "$today" && -f "$STATE" ]] && t=$((t + now_ts - $(cat "$STATE")))
-    # [[ "$d" == "$today" && -f "$STATE" ]] && t=$((t + now_ts - state_now))
+    [[ "$d" == "$today" && -f "$STATE" ]] && t=$((t + now_ts - $(<"$STATE")))
     printf "%s  %dh %02dm %02ds\n" "$d" $((t/3600)) $((t%3600/60)) $((t%60))
   done
   ;;
 
 *)
-  echo "work-track {on|off|stats}"
+  echo "mini-track {on|off|stats [days]}" >&2
+  exit 1
   ;;
 esac
